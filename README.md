@@ -57,7 +57,7 @@ POST /api/tick
 Authorization: Bearer <SCHEDULER_SECRET>
 ```
 
-Private Sites access may also require platform service authorization. Both boundaries must be configured on the unattended caller. The scheduled export alone does not provision a hosted trigger. This build does not create a recurring Codex chat as an application scheduler.
+Private Sites access may also require platform service authorization. Both boundaries must be configured on the unattended caller. The scheduled export alone does not provision a hosted trigger. The private Site also exposes authenticated MCP worker operations for a linked cloud schedule; see `SCHEDULER.md`. Each invocation is scoped to its authenticated owner and cannot dispatch email.
 
 The first tick records a heartbeat. Age over five minutes is degraded. Occurrences more than two minutes late are marked missed and not replayed. Run now leaves the next occurrence unchanged. Timezone recurrence handles DST gaps at the next valid minute and runs once in a repeated hour. One active run blocks overlap; unresolved approvals count as active.
 
