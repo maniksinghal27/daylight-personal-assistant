@@ -57,6 +57,18 @@ async function oauthCallback(r,env,owner){const u=new URL(r.url);const nonce=u.s
 export default {async fetch(r,env,ctx){try{
  const u=new URL(r.url);if(u.pathname==='/mcp')return await mcpRequest(r,env);if(['/pdf.mjs','/pdf.worker.mjs'].includes(u.pathname))return new Response(u.pathname==='/pdf.mjs'?PDF:PDF_WORKER,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'public, max-age=86400'}});if(!u.pathname.startsWith('/api/')&&!u.pathname.startsWith('/oauth/'))return new Response(PAGE,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'}});
  if(!env.DB)fail('Database binding is unavailable. Deploy with the DB binding and initial migration.',503);
+ if(u.pathname==='/api/scheduler-tick'){
+  if(r.method!=='POST')fail('POST required.',405);
+  if(env.SCHEDULER_MODE!=='private-sites')fail('Private Sites scheduler is not enabled.',503);
+  if(r.headers.get('Origin')&&r.headers.get('Origin')!==u.origin)fail('Cross-origin request denied.',403);
+  const owners=await env.DB.prepare('SELECT DISTINCT owner FROM workspaces WHERE id=owner').all();
+  if(owners.results.length!==1)fail('The shared scheduler requires exactly one live owner workspace.',409);
+  const owner=owners.results[0].owner;const visitor=r.headers.get('oai-authenticated-user-id');
+  if(visitor&&visitor!==owner)fail('This visitor does not own the scheduled workspace.',403);
+  // This explicitly configured owner-private endpoint uses Sites service authorization at the gateway.
+  // Never enable this mode on a public/shared deployment; user data is pinned to the sole live owner above.
+  return json(await tick(env,owner));
+ }
  if(u.pathname==='/api/health'&&r.method==='GET'){await env.DB.prepare('SELECT id FROM workspaces LIMIT 1').all();return json({app:'Daylight',storage:'ready',model:!!(env.NEBIUS_API_KEY&&env.NEBIUS_MODEL),google:!!(env.GOOGLE_CLIENT_ID&&env.GOOGLE_CLIENT_SECRET&&env.GOOGLE_TOKEN_KEY)});}
  if(u.pathname==='/api/tick'){if(!env.SCHEDULER_SECRET||r.headers.get('Authorization')!=='Bearer '+env.SCHEDULER_SECRET)fail('Scheduler authentication required.',401);return json(await tick(env));}
  const owner=identity(r,env);if(u.pathname==='/oauth/google')return await oauthCallback(r,env,owner);
