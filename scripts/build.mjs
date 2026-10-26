@@ -1,0 +1,10 @@
+import {readFile,mkdir,writeFile,cp} from 'node:fs/promises';
+const html=await readFile('src/index.html','utf8');const css=await readFile('src/style.css','utf8');const client=await readFile('src/client.js','utf8');
+const page=html.replace('/* APP_CSS */',()=>css).replace('/* APP_JS */',()=>client);
+const core=await readFile('src/core.js','utf8');let server=await readFile('src/server.js','utf8');server=server.replace("import {id,now,builtin,initial,event,notice,activeMemories,nextOccurrences,templateOutput} from './core.js';",core.replaceAll('export ',''));
+const pdfRoot=process.env.DAYLIGHT_PDFJS_ROOT||'vendor/pdfjs';
+const pdf=await readFile(pdfRoot+'/build/pdf.min.mjs','utf8');const pdfWorker=await readFile(pdfRoot+'/build/pdf.worker.min.mjs','utf8');
+server=server.replace('/* PDF_LITERAL */',()=>JSON.stringify(pdf)).replace('/* PDF_WORKER_LITERAL */',()=>JSON.stringify(pdfWorker));
+await mkdir('dist/server',{recursive:true});await mkdir('dist/.openai',{recursive:true});
+await writeFile('worker/index.js',server.replace('/* PAGE_LITERAL */',()=>JSON.stringify(page)));
+await cp('worker/index.js','dist/server/index.js');await cp('.openai/hosting.json','dist/.openai/hosting.json');await cp('drizzle','dist/.openai/drizzle',{recursive:true});console.log('Built Daylight Worker with embedded UI and D1 migrations');

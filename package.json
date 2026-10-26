@@ -1,0 +1,11 @@
+{
+  "name": "daylight-personal-assistant",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "test": "node tests/acceptance.mjs",
+    "validate": "node scripts/validate-artifact.mjs"
+  }
+}
