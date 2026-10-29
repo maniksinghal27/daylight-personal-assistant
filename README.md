@@ -2,6 +2,8 @@
 
 A private personal work assistant built from the supplied `Personal_AI_Assistant_Functional_Spec.docx`. Meeting preparation, saved preferences, editable follow-up drafts, explicit email approvals, reusable workflows, and schedule controls share one responsive workspace.
 
+[Open the public review demo](https://daylight-review.maniksinghal-daylight.workers.dev/). It is hosted in the project owner's Cloudflare account and opens without a ChatGPT allowlist. Each visitor receives fictional data in an isolated session. Email delivery is simulated; generation is labeled as template-based until a real Nebius key and model are configured.
+
 ## Run locally
 
 Requires Node.js 24 or later. No package-install step is needed. PDF.js is vendored with its Apache 2.0 license.
