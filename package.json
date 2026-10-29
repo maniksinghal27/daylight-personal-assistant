@@ -5,7 +5,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
-    "test": "node tests/acceptance.mjs",
+    "test": "node tests/acceptance.mjs && node tests/review.mjs",
+    "dev:review": "node scripts/dev-review.mjs",
     "validate": "node scripts/validate-artifact.mjs"
   }
 }

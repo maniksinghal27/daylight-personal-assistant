@@ -1,6 +1,8 @@
 dist/
 site.tar.gz
 .local.sqlite*
+.review.sqlite*
+.wrangler/
 .env*
 !.env.example
 node_modules/

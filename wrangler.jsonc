@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "daylight-review",
+  "account_id": "e3c877f85e3d2194806544256749a143",
+  "main": "deploy/review-worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "daylight-review",
+      "database_id": "19585796-8c3a-4a52-bb03-2a49623ba126",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}

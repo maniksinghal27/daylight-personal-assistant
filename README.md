@@ -46,6 +46,10 @@ Accept the processing disclosure before live generation. The request includes th
 
 Official references: [Nebius API](https://api.tokenfactory.nebius.com/docs), [Google OAuth](https://developers.google.com/identity/protocols/oauth2/web-server), [Gmail sending](https://developers.google.com/workspace/gmail/api/guides/sending).
 
+## Public review hosting
+
+For a separate reviewer demo in the project owner's Cloudflare account, see [REVIEW_DEPLOYMENT.md](REVIEW_DEPLOYMENT.md). That entrypoint uses signed visitor sessions, fictional data, simulated email, and no background schedules. It does not expose a private Sites workspace. The final URL must be deployed and checked before being submitted.
+
 ## Hosting and background work
 
 The build emits a Cloudflare Worker ESM export in `dist/server/index.js`, with embedded UI and PDF parsing assets. `.openai/hosting.json` declares `DB`. The migration in `drizzle/0000_workspace.sql` is packaged under `dist/.openai/drizzle`. Append migrations for schema changes; request handlers do not create tables.
@@ -76,7 +80,7 @@ Every workspace read/write includes its owner. Mutations use compare-and-swap re
 
 ## Validation and release limits
 
-Thirty automated checks pass: isolation, encrypted credentials, duplicate approval prevention, stale/denied/paused actions, deleted memory/source exclusion, OAuth owner binding, mocked model evidence, uncertain send reconciliation, authenticated scheduler execution, and DST recurrence. Browser checks covered explicit demo entry, meeting preparation, approval receipts, and desktop/mobile layout. No real email was sent during development.
+Thirty-six automated checks pass: isolation, encrypted credentials, duplicate approval prevention, stale/denied/paused actions, deleted memory/source exclusion, OAuth owner binding, mocked model evidence, uncertain send reconciliation, authenticated scheduler execution, and DST recurrence. Browser checks covered explicit demo entry, meeting preparation, approval receipts, and desktop/mobile layout. No real email was sent during development.
 
 The full AC01–AC20 release gate has not passed. Remaining work includes:
 
