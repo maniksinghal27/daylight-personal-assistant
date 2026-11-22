@@ -37,7 +37,46 @@ async function execute(env,key,owner,rid){let snapshot;try{
  const d={id:id(),title:run.skill==='followup'?'Follow-up · '+(s.meetings.find(m=>m.id===run.meeting)?.person||'new conversation'):run.skill==='daily'?'Daily brief · '+new Date().toISOString().slice(0,10):s.meetings.find(m=>m.id===run.meeting)?.title||run.prompt.slice(0,65),text:output.text,type:run.skill==='followup'?'Draft':'Brief',version:1,created:now(),references:refs.map(x=>({id:x.id,version:x.version,title:x.title})),memoryUsed:mem.map(x=>({id:x.id,text:x.text,version:x.version})),model:output.model,to:run.to||s.meetings.find(m=>m.id===run.meeting)?.email||'',subject:run.subject||'Following up on our conversation',run:rid};s.documents.unshift(d);r.state='Succeeded';r.completed=now();r.document=d.id;r.model=output.model;r.tokens=output.tokens;r.sourcesUsed=refs.map(x=>x.id);r.memoryUsed=mem.map(x=>x.id);s.usage.requests+=output.tokens===0?0:1;if(output.tokens!==null)s.usage.tokens+=output.tokens;else s.usage.unknown=true;if(output.tokens!==0)s.modelCheck={time:now(),model:output.model};event(s,'Your '+(run.skill==='followup'?'draft':'brief')+' is ready',d.title,output.tokens===0?'demo.template':'nebius.inference');notice(s,d.title+' is ready','library');if(run.test){const k=s.skills.find(x=>x.id===run.skill);if(k&&k.version===run.skillVersion)k.state='Tested';}if(run.automation){const a=s.automations.find(x=>x.id===run.automation);if(a)a.lastRun=now();}});
  }catch(e){await change(env,key,owner,s=>{const r=s.runs.find(x=>x.id===rid);if(r&&!['Canceled','Paused'].includes(r.state)){r.state='Failed';r.error=e.message;r.completed=now();event(s,'Run needs attention',e.message,'run.error','Failed');notice(s,'A run needs attention','tasks');}}).catch(()=>{});}}
 function createRun(s,b){checkLive(s);const skill=s.skills.find(x=>x.id===b.skill);if(b.skill&&(!skill||['Disabled','Draft'].includes(skill.state)&&!b.test))fail('Test and activate this skill before running it.');if(b.skill==='meeting'&&!s.meetings.some(m=>m.id===b.meeting))fail('Select the meeting to prepare for.');if(b.skill==='followup'&&!text(b.notes))fail('Add meeting notes or an outcome for the follow-up.');const r={id:id(),prompt:required(b.prompt||skill?.name,'Request'),skill:b.skill||null,skillVersion:skill?.version,meeting:b.meeting||null,notes:text(b.notes),to:text(b.to),subject:text(b.subject),sources:(b.sources||[]).filter(src=>s.sources.some(x=>x.id===src&&x.active&&x.state==='Ready')),memory:b.memory!==false,state:'Queued',created:now(),test:!!b.test,automation:b.automation||null};s.runs.unshift(r);s.chats.unshift({id:id(),title:r.prompt.slice(0,65),run:r.id,created:now(),archived:false});return r;}
-async function tick(env,onlyOwner=null){const t=now();await env.DB.prepare('INSERT INTO service_state(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').bind('heartbeat',String(t)).run();const rows=onlyOwner?await env.DB.prepare('SELECT id,owner FROM workspaces WHERE owner=?').bind(onlyOwner).all():await env.DB.prepare('SELECT id,owner FROM workspaces').all();let triggered=0;for(const row of rows.results){let launch=[];await change(env,row.id,row.owner,s=>{if(s.settings.paused||s.demo)return;for(const a of s.automations.filter(x=>x.state==='Enabled')){if(!a.nextAt){a.nextAt=nextOccurrences(a,t,1)[0]||null;continue;}if(a.nextAt>t)continue;const occurrence=a.nextAt;a.nextAt=nextOccurrences(a,t,1)[0]||null;if(t-occurrence>120000){event(s,'Scheduled run missed',a.name+' · use Run now to start a new occurrence.','scheduler','Missed');continue;}if(s.runs.some(r=>r.automation===a.id&&['Queued','Running','Waiting for approval','Paused'].includes(r.state))){event(s,'Scheduled run skipped','Another run is active.','scheduler','Skipped');continue;}const skill=s.skills.find(k=>k.id===a.skill&&k.version===a.version&&k.state==='Active');if(!skill){a.state='Attention required';continue;}const r=createRun(s,{...a,prompt:a.name,automation:a.id});r.scheduled=occurrence;launch.push(r.id);if(a.recurrence==='once')a.state='Completed';}});for(const rid of launch){await execute(env,row.id,row.owner,rid);triggered++;}}return {heartbeat:t,triggered};}
+function checkAutomationSkill(skill){
+ if(skill==='meeting'||skill==='followup')fail('Choose a different skill for this schedule. Meeting preparation and Follow-up draft require inputs from a manual run.');
+}
+async function tick(env,onlyOwner=null){
+ const t=now();
+ await env.DB.prepare('INSERT INTO service_state(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').bind('heartbeat',String(t)).run();
+ const rows=onlyOwner?await env.DB.prepare('SELECT id,owner FROM workspaces WHERE owner=?').bind(onlyOwner).all():await env.DB.prepare('SELECT id,owner FROM workspaces').all();
+ let triggered=0;
+ for(const row of rows.results){
+  const launch=await change(env,row.id,row.owner,s=>{
+   const runIds=[];
+   if(s.settings.paused||s.demo)return runIds;
+   for(const a of s.automations.filter(x=>x.state==='Enabled')){
+    if(!a.nextAt){a.nextAt=nextOccurrences(a,t,1)[0]||null;continue;}
+    if(a.nextAt>t)continue;
+    const occurrence=a.nextAt;
+    a.nextAt=nextOccurrences(a,t,1)[0]||null;
+    if(t-occurrence>120000){event(s,'Scheduled run missed',a.name+' · use Run now to start a new occurrence.','scheduler','Missed');continue;}
+    if(s.runs.some(r=>r.automation===a.id&&['Queued','Running','Waiting for approval','Paused'].includes(r.state))){event(s,'Scheduled run skipped','Another run is active.','scheduler','Skipped');continue;}
+    const skill=s.skills.find(k=>k.id===a.skill&&k.version===a.version&&k.state==='Active');
+    if(!skill){a.state='Attention required';continue;}
+    try{
+     checkAutomationSkill(a.skill);
+     const r=createRun(s,{...a,prompt:a.name,automation:a.id});
+     r.scheduled=occurrence;
+     runIds.push(r.id);
+    }catch(e){
+     if(e.status!==400)throw e;
+     a.state='Attention required';
+     event(s,'Scheduled run needs attention',a.name+' · '+e.message,'scheduler','Attention required');
+     continue;
+    }
+    if(a.recurrence==='once')a.state='Completed';
+   }
+   return runIds;
+  });
+  for(const rid of launch){await execute(env,row.id,row.owner,rid);triggered++;}
+ }
+ return {heartbeat:t,triggered};
+}
 async function mcpRequest(r,env){
  if(r.method!=='POST')return json({error:'POST required.'},405);
  const owner=identity(r,env);if(!env.DB)fail('Database binding unavailable.',503);
@@ -118,9 +157,9 @@ export default {async fetch(r,env,ctx){try{
  case 'skill-state':{const k=s.skills.find(x=>x.id===b.id);if(!k)fail('Skill not found.');if(b.state==='Active'&&!['Tested','Disabled'].includes(k.state))fail('Complete a test for this version before activation.');k.state=b.state;if(k.state==='Disabled')s.automations.filter(a=>a.skill===k.id).forEach(a=>a.state='Paused');break;}
  case 'skill-duplicate':{const k=s.skills.find(x=>x.id===b.id);if(k)s.skills.push({...structuredClone(k),id:id(),name:k.name+' · personal',builtin:false,state:'Draft',version:1});break;}
  case 'skill-delete':{const k=s.skills.find(x=>x.id===b.id);if(k?.builtin)fail('Built-in skills cannot be deleted.');s.skills=s.skills.filter(x=>x.id!==b.id);s.automations.filter(a=>a.skill===b.id).forEach(a=>a.state='Attention required');break;}
- case 'automation-save':{const skill=s.skills.find(k=>k.id===b.skill&&k.state==='Active');if(!skill)fail('Select an active, tested skill.');if(!['daily','weekdays','once'].includes(b.recurrence))fail('Select a supported recurrence.');if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(b.time))fail('Choose a valid time.');try{new Intl.DateTimeFormat('en',{timeZone:b.timezone});}catch{fail('Choose a valid IANA timezone.');}if(b.recurrence==='once'&&!(new Date(b.once).getTime()>now()))fail('Choose a future time.');const a={id:b.id||id(),name:required(b.name,'Name'),skill:b.skill,version:skill.version,recurrence:b.recurrence,time:b.time,timezone:b.timezone,once:b.once,sources:b.sources||[],memory:b.memory!==false,state:'Paused',created:now()};a.nextAt=nextOccurrences(a)[0]||null;const i=s.automations.findIndex(x=>x.id===a.id);if(i>=0)s.automations[i]=a;else s.automations.unshift(a);event(s,'Schedule saved paused',a.name+' · enable after checking worker health.','automation.save');break;}
- case 'automation-toggle':{checkLive(s);const a=s.automations.find(x=>x.id===b.id);if(!a)fail('Schedule not found.');if(a.state==='Enabled')a.state='Paused';else{if(!s.demo&&env.SCHEDULER_READY!=='true')fail('The recurring worker trigger is not configured. Use Run now until deployment setup is complete.',409);if(!s.demo&&(!env.NEBIUS_API_KEY||!env.NEBIUS_MODEL))fail('Configure and verify Nebius before enabling scheduled generation.',409);const k=s.skills.find(k=>k.id===a.skill&&k.state==='Active'&&k.version===a.version);if(!k)fail('Review the pinned skill version before resuming.');a.state='Enabled';a.nextAt=nextOccurrences(a)[0]||null;}break;}
- case 'automation-run':{const a=s.automations.find(x=>x.id===b.id);if(!a)fail('Schedule not found.');if(s.runs.some(r=>r.automation===a.id&&['Running','Queued','Waiting for approval','Paused'].includes(r.state)))fail('An existing run is active. Resolve it before running again.');launch=createRun(s,{...a,prompt:a.name,automation:a.id});return {run:launch.id};}
+ case 'automation-save':{checkAutomationSkill(b.skill);const skill=s.skills.find(k=>k.id===b.skill&&k.state==='Active');if(!skill)fail('Select an active, tested skill.');if(!['daily','weekdays','once'].includes(b.recurrence))fail('Select a supported recurrence.');if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(b.time))fail('Choose a valid time.');try{new Intl.DateTimeFormat('en',{timeZone:b.timezone});}catch{fail('Choose a valid IANA timezone.');}if(b.recurrence==='once'&&!(new Date(b.once).getTime()>now()))fail('Choose a future time.');const a={id:b.id||id(),name:required(b.name,'Name'),skill:b.skill,version:skill.version,recurrence:b.recurrence,time:b.time,timezone:b.timezone,once:b.once,sources:b.sources||[],memory:b.memory!==false,state:'Paused',created:now()};a.nextAt=nextOccurrences(a)[0]||null;const i=s.automations.findIndex(x=>x.id===a.id);if(i>=0)s.automations[i]=a;else s.automations.unshift(a);event(s,'Schedule saved paused',a.name+' · enable after checking worker health.','automation.save');break;}
+ case 'automation-toggle':{checkLive(s);const a=s.automations.find(x=>x.id===b.id);if(!a)fail('Schedule not found.');if(a.state==='Enabled')a.state='Paused';else{checkAutomationSkill(a.skill);if(!s.demo&&env.SCHEDULER_READY!=='true')fail('The recurring worker trigger is not configured. Use Run now until deployment setup is complete.',409);if(!s.demo&&(!env.NEBIUS_API_KEY||!env.NEBIUS_MODEL))fail('Configure and verify Nebius before enabling scheduled generation.',409);const k=s.skills.find(k=>k.id===a.skill&&k.state==='Active'&&k.version===a.version);if(!k)fail('Review the pinned skill version before resuming.');a.state='Enabled';a.nextAt=nextOccurrences(a)[0]||null;}break;}
+ case 'automation-run':{const a=s.automations.find(x=>x.id===b.id);if(!a)fail('Schedule not found.');checkAutomationSkill(a.skill);if(s.runs.some(r=>r.automation===a.id&&['Running','Queued','Waiting for approval','Paused'].includes(r.state)))fail('An existing run is active. Resolve it before running again.');launch=createRun(s,{...a,prompt:a.name,automation:a.id});return {run:launch.id};}
  case 'automation-delete':s.automations=s.automations.filter(x=>x.id!==b.id);break;
  case 'chat-rename':{const c=s.chats.find(x=>x.id===b.id);if(c)c.title=required(b.title,'Title');break;}
  case 'chat-archive':{const c=s.chats.find(x=>x.id===b.id);if(c)c.archived=!c.archived;break;}
